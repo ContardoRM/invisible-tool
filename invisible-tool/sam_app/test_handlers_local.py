@@ -112,10 +112,18 @@ def test_demo_runner_produces_live_report() -> dict:
     return {"run_id": run_id, "report": report}
 
 
+def _report_event(run_id: str) -> dict:
+    # event["path"] refleja el resourcePath de API Gateway SIN el
+    # prefijo del stage (confirmado contra la documentación oficial de
+    # Lambda proxy integration: el stage vive en requestContext, no en
+    # "path"). El recurso real es /demo/report/{run_id}.
+    return {"path": f"/demo/report/{run_id}", "pathParameters": {"run_id": run_id}}
+
+
 def test_report_reader_recovers_same_report(run_id: str, original_report: dict) -> None:
     from report_reader import app as reader_app
 
-    result = reader_app.handler({"pathParameters": {"run_id": run_id}}, None)
+    result = reader_app.handler(_report_event(run_id), None)
     assert result["statusCode"] == 200, result
     body = json.loads(result["body"])
     assert body["run_id"] == run_id
@@ -128,7 +136,7 @@ def test_report_reader_recovers_same_report(run_id: str, original_report: dict) 
 def test_report_reader_404_for_unknown_run_id() -> None:
     from report_reader import app as reader_app
 
-    result = reader_app.handler({"pathParameters": {"run_id": "does-not-exist"}}, None)
+    result = reader_app.handler(_report_event("does-not-exist"), None)
     assert result["statusCode"] == 404, result
     print("PASS  test_report_reader_404_for_unknown_run_id")
 
@@ -136,9 +144,43 @@ def test_report_reader_404_for_unknown_run_id() -> None:
 def test_report_reader_400_without_run_id() -> None:
     from report_reader import app as reader_app
 
-    result = reader_app.handler({}, None)
+    # Ruta /demo/report/ reconocida como prefijo pero sin pathParameters.
+    result = reader_app.handler({"path": "/demo/report/", "pathParameters": {}}, None)
     assert result["statusCode"] == 400, result
     print("PASS  test_report_reader_400_without_run_id")
+
+
+def test_report_reader_serves_ui_page() -> None:
+    from report_reader import app as reader_app
+
+    result = reader_app.handler({"path": "/"}, None)
+    assert result["statusCode"] == 200, result
+    assert result["headers"]["Content-Type"] == "text/html"
+    assert "Invisible Tool" in result["body"]
+    assert 'data-i18n="title"' in result["body"]
+    print("PASS  test_report_reader_serves_ui_page")
+
+
+def test_report_reader_serves_ui_assets() -> None:
+    from report_reader import app as reader_app
+
+    for asset_path, expect_substring in (
+        ("/ui/app.js", "runLiveCheck"),
+        ("/ui/translations.js", "const TRANSLATIONS"),
+    ):
+        result = reader_app.handler({"path": asset_path}, None)
+        assert result["statusCode"] == 200, (asset_path, result)
+        assert "javascript" in result["headers"]["Content-Type"], (asset_path, result["headers"])
+        assert expect_substring in result["body"], asset_path
+    print("PASS  test_report_reader_serves_ui_assets")
+
+
+def test_report_reader_404_for_unknown_route() -> None:
+    from report_reader import app as reader_app
+
+    result = reader_app.handler({"path": "/nonexistent"}, None)
+    assert result["statusCode"] == 404, result
+    print("PASS  test_report_reader_404_for_unknown_route")
 
 
 if __name__ == "__main__":
@@ -148,5 +190,8 @@ if __name__ == "__main__":
     test_report_reader_recovers_same_report(demo_result["run_id"], demo_result["report"])
     test_report_reader_404_for_unknown_run_id()
     test_report_reader_400_without_run_id()
+    test_report_reader_serves_ui_page()
+    test_report_reader_serves_ui_assets()
+    test_report_reader_404_for_unknown_route()
 
     print("\nTodas las pruebas de humo locales pasaron.")

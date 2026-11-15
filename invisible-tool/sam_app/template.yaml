@@ -45,6 +45,12 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref StageName
+      # Sin bloque Cors: la UI se sirve desde este mismo API Gateway
+      # (GET / y GET /app.js, /translations.js) y llama a /demo/run y
+      # /demo/report/{run_id} en el mismo origen, por lo que no hay
+      # petición cross-origin que habilitar. Ver ui/README.md para cómo
+      # probar la UI localmente sin este API Gateway (ahí sí hace
+      # falta CORS, documentado en esa guía).
 
   DemoRunnerFunction:
     Type: AWS::Serverless::Function
@@ -88,15 +94,16 @@ Resources:
       Handler: app.handler
       CodeUri: report_reader/
       Description: >
-        Recupera, por run_id, los informes persistidos por
-        DemoRunnerFunction (Query acotado a la clave de partición).
+        Recupera informes por run_id y sirve la UI bilingüe estática
+        desde el mismo origen (GET /, /ui/app.js, /ui/translations.js).
       Environment:
         Variables:
           REPORTS_TABLE_NAME: !Ref ReportsTable
       Policies:
         # Permisos mínimos: solo lectura (GetItem + Query), acotados al
         # ARN exacto de esta tabla. Sin permiso de escritura: este
-        # Lambda nunca necesita modificar la tabla.
+        # Lambda nunca necesita modificar la tabla. Servir archivos
+        # estáticos no requiere ningún permiso de AWS adicional.
         - Statement:
             - Effect: Allow
               Action:
@@ -110,11 +117,26 @@ Resources:
             RestApiId: !Ref DemoApi
             Path: /demo/report/{run_id}
             Method: GET
+        GetUiPage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DemoApi
+            Path: /
+            Method: GET
+        GetUiAsset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DemoApi
+            Path: /ui/{asset}
+            Method: GET
 
 Outputs:
   ApiUrl:
     Description: URL base de la API de demo.
     Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  UiPageUrl:
+    Description: URL directa de la página de demo bilingüe (GET /).
+    Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/"
   ReportsTableName:
     Description: Nombre de la tabla DynamoDB de informes.
     Value: !Ref ReportsTable
