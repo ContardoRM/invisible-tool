@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+.python-version
+
+# Variables de entorno y secretos locales
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*_rsa
+*_rsa.pub
+credentials
+credentials.json
+*.credentials
+
+# AWS SAM
+sam_app/.aws-sam/
+sam_app/samconfig.toml
+samconfig.toml
+
+# AWS Emulator (artefactos generados en tiempo de ejecución: claves,
+# certificado CA y config que el propio emulador escribe al arrancar)
+.aws/emulator/
+**/.aws/emulator/
+
+# DynamoDB Local (si se descarga/extrae localmente)
+DynamoDBLocal_lib/
+DynamoDBLocal.jar
+*.sqlite
+
+# Docker / build scratch
+.aws-sam/
+
+# macOS
+.DS_Store
+
+# Editores / IDE
+.vscode/
+.idea/

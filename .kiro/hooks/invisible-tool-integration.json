@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Ejecutar integración invisible-tool (lab + DynamoDB Local)",
+      "trigger": "UserPromptSubmit",
+      "description": "Hook manual: corre el ciclo completo del laboratorio GHSA-7xgj-8392-5q4r (FastMCP 3.4.9 y 3.4.10) contra DynamoDB Local y reporta el resultado. Se dispara solo cuando el usuario escribe explícitamente la frase de invocación, no en cada mensaje.",
+      "matcher": "run invisible-tool integration|ejecutar integracion invisible-tool|ejecutar integración invisible-tool",
+      "action": {
+        "type": "command",
+        "command": "cd \"$(git rev-parse --show-toplevel)/invisible-tool\" && ./run_integration.sh",
+        "timeout": 180
+      }
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  invisible-tool demo: API Gateway + Lambda + DynamoDB.
+  DemoRunnerFunction ejecuta tools/list y tools/call contra una fixture
+  FastMCP 3.4.10 embebida (identidades sintéticas authorized/restricted),
+  pasa la salida por el mismo verifier.py que ya validó la matriz de
+  aceptación con DynamoDB Local y con el AWS Emulator, y persiste el
+  informe en DynamoDB con un run_id propio. ReportReaderFunction lo
+  recupera. La tabla la crea esta plantilla; cada función Lambda recibe
+  únicamente los permisos de lectura/escritura que necesita sobre ella.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - x86_64
+
+Parameters:
+  StageName:
+    Type: String
+    Default: demo
+    Description: Nombre del stage de API Gateway.
+
+Resources:
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-reports"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: report_id
+          AttributeType: S
+        - AttributeName: target_version
+          AttributeType: S
+      KeySchema:
+        - AttributeName: report_id
+          KeyType: HASH
+        - AttributeName: target_version
+          KeyType: RANGE
+
+  DemoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref StageName
+
+  DemoRunnerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      Handler: app.handler
+      CodeUri: demo_runner/
+      Description: >
+        Ejecuta tools/list y tools/call (restricted primero, authorized
+        como control) contra la fixture FastMCP 3.4.10 embebida, verifica
+        el resultado, y lo persiste con un run_id propio.
+      Environment:
+        Variables:
+          REPORTS_TABLE_NAME: !Ref ReportsTable
+      Policies:
+        # Permisos mínimos: solo PutItem (escribir el informe nuevo) y
+        # GetItem (por si el propio handler necesita releer antes de
+        # responder), acotados al ARN exacto de esta tabla. Nada de
+        # DeleteTable, DeleteItem, Scan sin acotar, ni acceso a otras
+        # tablas.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+              Resource: !GetAtt ReportsTable.Arn
+      Events:
+        RunDemo:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DemoApi
+            Path: /demo/run
+            Method: POST
+
+  ReportReaderFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      Handler: app.handler
+      CodeUri: report_reader/
+      Description: >
+        Recupera, por run_id, los informes persistidos por
+        DemoRunnerFunction (Query acotado a la clave de partición).
+      Environment:
+        Variables:
+          REPORTS_TABLE_NAME: !Ref ReportsTable
+      Policies:
+        # Permisos mínimos: solo lectura (GetItem + Query), acotados al
+        # ARN exacto de esta tabla. Sin permiso de escritura: este
+        # Lambda nunca necesita modificar la tabla.
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource: !GetAtt ReportsTable.Arn
+      Events:
+        GetReport:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DemoApi
+            Path: /demo/report/{run_id}
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: URL base de la API de demo.
+    Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  ReportsTableName:
+    Description: Nombre de la tabla DynamoDB de informes.
+    Value: !Ref ReportsTable
+  RunDemoEndpoint:
+    Description: Endpoint para disparar una corrida en vivo (POST).
+    Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/demo/run"
+  GetReportEndpointTemplate:
+    Description: Endpoint para recuperar un informe por run_id (GET).
+    Value: !Sub "https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/demo/report/{run_id}"
